@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Withdraw</title>
+    <link rel="stylesheet" href="styleswithdraw.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Withdraw Points</h2>
+        <div class="card">
+            <div class="card-content">
+                <h3>Points</h3>
+                <p id="points-display">Loading...</p> <!-- Display points here -->
+            </div>
+            <div class="card-actions">
+                <button class="withdraw-button">Withdraw</button>
+            </div>
+        </div>
+
+        <h2>Bank Account Details</h2>
+        <form id="withdraw-form">
+            <div class="form-group">
+                <label for="accountNumber">Account Number</label>
+                <input type="text" id="accountNumber" name="accountNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="accountHolderName">Account Holder's Name</label>
+                <input type="text" id="accountHolderName" name="accountHolderName" required>
+            </div>
+            <div class="form-group">
+                <label for="bank">Bank</label>
+                <input type="text" id="bank" name="bank" required>
+            </div>
+            <div class="form-group">
+                <label for="branch">Branch</label>
+                <input type="text" id="branch" name="branch" required>
+            </div>
+            <div class="form-group">
+                <label for="amount">Amount to Withdraw</label>
+                <input type="number" id="amount" name="amount" min="1" required>
+            </div>
+            <p>Note: You should have a Sri Lankan local bank account to request withdrawal.</p>
+            <button type="submit" id="submit-button">Submit</button>
+        </form>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+        import { getDatabase, ref, push, onValue, update, set } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBzT2dALtbrgLiLZ63-D07sTDKkdLnqWtY",
+    authDomain: "adwebv4.firebaseapp.com",
+    projectId: "adwebv4",
+    storageBucket: "adwebv4.appspot.com",
+    messagingSenderId: "989854092604",
+    appId: "1:989854092604:web:307c31c0eda1101aed2239",
+    measurementId: "G-02GSXV1336"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const database = getDatabase(app);
+
+        // Set session persistence to "local"
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = "login.html"; // Redirect to login page if user is not authenticated
+            } else {
+                // Load user's points if logged in
+                loadUserPoints(user.uid);
+            }
+        });
+
+        // Function to load user's points from Firebase
+        function loadUserPoints(userId) {
+            const userPointsRef = ref(database, `userPoints/${userId}/points`);
+            onValue(userPointsRef, (snapshot) => {
+                const points = snapshot.val() || 0;
+                document.getElementById('points-display').textContent = `Points: ${points}`; // Display points
+            });
+        }
+
+        // Flag to track whether a request is in progress
+        let requestInProgress = false;
+
+        // Handle withdraw form submission
+        const withdrawForm = document.getElementById('withdraw-form');
+        withdrawForm.addEventListener('submit', async function handleWithdrawal(e) {
+            e.preventDefault();
+
+            if (requestInProgress) {
+                return; // If a request is already in progress, ignore subsequent submissions
+            }
+
+            // Disable the submit button to prevent multiple submissions
+            const submitButton = document.getElementById('submit-button');
+            submitButton.disabled = true;
+
+            const accountNumber = document.getElementById('accountNumber').value;
+            const accountHolderName = document.getElementById('accountHolderName').value;
+            const bank = document.getElementById('bank').value;
+            const branch = document.getElementById('branch').value;
+            const amount = Number(document.getElementById('amount').value);
+
+            // Get current user ID
+            const userId = auth.currentUser.uid;
+
+            // Retrieve user's current points
+            const userPointsRef = ref(database, `userPoints/${userId}/points`);
+            onValue(userPointsRef, async function withdrawalSnapshot(snapshot) {
+                const currentPoints = snapshot.val() || 0;
+
+                if (amount > currentPoints) {
+                    alert('Insufficient balance to withdraw');
+                    // Re-enable the submit button
+                    submitButton.disabled = false;
+                    return;
+                }
+
+                // Set request in progress flag to true
+                requestInProgress = true;
+
+                // Save withdrawal request to Firebase
+                try {
+                    const requestsRef = ref(database, 'withdrawalRequests');
+                    const newRequestRef = push(requestsRef);
+                    await update(newRequestRef, {
+                        userId: userId,
+                        accountNumber: accountNumber,
+                        accountHolderName: accountHolderName,
+                        bank: bank,
+                        branch: branch,
+                        amount: amount,
+                        status: 'pending'
+                    });
+
+                    // Update user's points
+                    const updatedPoints = currentPoints - amount;
+                    await set(userPointsRef, updatedPoints);
+
+                    alert('Withdrawal request submitted successfully');
+                    // Clear form fields after submission
+                    withdrawForm.reset();
+                } catch (error) {
+                    console.error('Error submitting withdrawal request:', error);
+                    alert('Failed to submit withdrawal request');
+                } finally {
+                    // Set request in progress flag to false
+                    requestInProgress = false;
+                    // Re-enable the submit button
+                    submitButton.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
